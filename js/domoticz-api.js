@@ -323,6 +323,14 @@ var Domoticz = function () {
             if(!res) return;
             return _setAllDevices(res)
         })
+        .then(function() { //temporary hack to get an update of all temp sensors
+            return domoticzRequest('type=devices&filter=temp', false)
+        })
+        .then(function (res) {
+            if(!res) return;
+            return _setAllDevices(res)
+        })
+
     }
 
     function _requestAllVariables() {
