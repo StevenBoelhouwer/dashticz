@@ -1,4 +1,9 @@
-/* global Dashticz usrEnc pwdEnc settings*/
+/* global Dashticz Domoticz settings MobileDetect*/
+/* From bundle:*/
+/* global templateEngine*/
+/* From src/functions.js*/
+/* global isDefined */
+
 var DT_secpanel = {
   name: "secpanel",
   defaultCfg: {
@@ -8,11 +13,6 @@ var DT_secpanel = {
   locked: false,
 
   init: function () {
-    var usrinfo = "";
-    if (typeof usrEnc !== "undefined" && usrEnc !== ""){
-      usrinfo = "username=" + usrEnc + "&password=" + pwdEnc + "&";
-    }      
-    this.url = settings["domoticz_ip"] + "/json.htm?" + usrinfo;
     this.CountdownTimer = 0;
     this.timer = 0;
     this.secondelay = 0;
@@ -31,12 +31,10 @@ var DT_secpanel = {
         DT_secpanel.onResize(me);
       })
       .done(function () {
-        DT_secpanel.ShowStatus();
-        DT_secpanel.SetRefreshTimer();
+        Domoticz.subscribe('_secstatus', true, function () { //subscribe to the security status, and receive the actual status directly
+          DT_secpanel.ShowStatus();
+        });
       });
-    Domoticz.subscribe('_secstatus', false, function () {
-      DT_secpanel.ShowStatus();
-    })
   },
 
   onResize: function (me) {
@@ -51,7 +49,6 @@ var DT_secpanel = {
 
   CheckStatus: function (secstatus) { //callback function for main.js    
     if (secstatus == 2) {
-      DT_secpanel.url = getDomCred();
       DT_secpanel.locked = true;
       templateEngine.load("secpanel_modal").then(function (modal) {
         $(document.body).append(modal);
@@ -96,10 +93,9 @@ var DT_secpanel = {
   },
 
   ShowStatus: function () {
-    $.ajax({
-      url: DT_secpanel.url + "type=command&param=getsecstatus&v=",
-      dataType: "json",
-      success: function (data) {
+    if (DT_secpanel.timer) return; //While we are counting down no refresh
+    Domoticz.request("type=command&param=getsecstatus&v=")
+      .then(function (data) {
         if (data.status != "OK") {
           DT_secpanel.ShowMsg("NO OK DATA");
           return;
@@ -129,12 +125,11 @@ var DT_secpanel = {
             "disabled"
           );
           DT_secpanel.secondelay = isDefined(data.secondelay) ?
-            data.secondelay + 1:
+            data.secondelay + 1 :
             5;
         }
-        DT_secpanel.SetRefreshTimer();
-      },
-      error: function (data) {
+      })
+      .catch(function (data) {
         console.log(data);
         switch (data.status) {
           case 401:
@@ -144,39 +139,32 @@ var DT_secpanel = {
             DT_secpanel.ShowMsg("NO CONNECT");
         }
         return;
-      },
-    });
-    $("#password").val("");
+      })
+      .always(function () {
+        $("#password").val("");
+      })
   },
 
   SetSecStatus: function (status) {
     clearInterval(this.CountdownTimer);
     var seccode = $(".sec-frame #password").val();
     if (isNaN(seccode)) {
-      beep("wrongcode");
+      DT_secpanel.wrongCode();
       return;
     }
-    if (typeof RefreshTimer != "undefined")
-      RefreshTimer = clearTimeout(RefreshTimer);
-    if (typeof CodeSetTimer != "undefined")
-      CodeSetTimer = clearTimeout(CodeSetTimer);
+    if (typeof DT_secpanel.RefreshTimer !== "undefined")
+      DT_secpanel.RefreshTimer = clearTimeout(DT_secpanel.RefreshTimer);
+    if (typeof DT_secpanel.CodeSetTimer !== "undefined")
+      DT_secpanel.CodeSetTimer = clearTimeout(DT_secpanel.CodeSetTimer);
 
-    $.ajax({
-      url: DT_secpanel.url +
-        "type=command&param=setsecstatus&secstatus=" +
+    Domoticz.request("type=command&param=setsecstatus&secstatus=" +
         status +
         "&seccode=" +
-        $.md5(seccode),
-      dataType: "json",
-      success: function (data) {
+        $.md5(seccode))
+      .then(function (data) {
         if (data.status != "OK") {
           if (data.message == "WRONG CODE") {
-            DT_secpanel.ShowMsg(data.message);
-            DT_secpanel.CodeSetTimer = setTimeout(function () {
-              DT_secpanel.doRefresh();
-            }, 2000);
-            $(".sec-frame #password").val("");
-            DT_secpanel.beep("wrongcode");
+            DT_secpanel.wrongCode();
           } else {
             DT_secpanel.ShowMsg("NO OK DATA");
             return;
@@ -185,18 +173,29 @@ var DT_secpanel = {
         } else {
           $(".sec-frame .status:not(.dashticz)").removeClass("disabled");
           var mode = $(".sec-frame").last().data("mode");
-          if (mode === 2 && status === 2) {
+          if (mode === 2 && status === 2 && settings["security_panel_lock"]) {
             location.reload();
           } else {
             DT_secpanel.ShowStatus();
           }
         }
-      },
-      error: function () {
+      })
+      .catch(function () {
         DT_secpanel.ShowMsg("NO CONNECT");
         return;
-      },
-    });
+      });
+  },
+
+  /** Displays the WRONG CODE message, clears the password, and plays wrongcode sound
+   * 
+   */
+  wrongCode: function () {
+    DT_secpanel.ShowMsg("WRONG CODE");
+    DT_secpanel.CodeSetTimer = setTimeout(function () {
+      DT_secpanel.ShowStatus();
+    }, 2000);
+    $(".sec-frame #password").val("");
+    DT_secpanel.beep("wrongcode");
   },
 
   AddDigit: function (digit) {
@@ -211,7 +210,7 @@ var DT_secpanel = {
       DT_secpanel.ShowMsg("");
     }
     this.CodeSetTimer = setTimeout(function () {
-      DT_secpanel.doRefresh();
+      DT_secpanel.ShowStatus();
     }, 10000);
 
     var orgtext = $(".sec-frame #password").val();
@@ -229,22 +228,10 @@ var DT_secpanel = {
 
   ShowMsg: function (val) {
     $(".sec-frame #digitdisplay").val(val);
-    this.RefreshTimer = setTimeout(function () {
-      DT_secpanel.SetRefreshTimer();
-    }, 60000);
-  },
-
-  SetRefreshTimer: function () {
-    if (typeof this.RefreshTimer != "undefined") {
-      this.RefreshTimer = clearTimeout(this.RefreshTimer);
-    }
-    this.RefreshTimer = setTimeout(function () {
-      DT_secpanel.SetRefreshTimer();
-    }, 60000);
   },
 
   countdown: function (status) {
-    if (DT_secpanel.timer > 1) {
+    if (DT_secpanel.timer > 0) {
       DT_secpanel.timer = DT_secpanel.timer - 1;
       DT_secpanel.beep("key");
       DT_secpanel.ShowMsg("Arm Delay: " + DT_secpanel.timer);
@@ -253,7 +240,6 @@ var DT_secpanel = {
       DT_secpanel.beep("arm");
       $(".sec-frame .status").removeClass("disabled");
       DT_secpanel.SetSecStatus(status);
-      DT_secpanel.SetRefreshTimer();
     }
   },
 
@@ -265,10 +251,6 @@ var DT_secpanel = {
     audio.play();
   },
 
-  doRefresh: function () {
-    this.ShowStatus();
-    this.SetRefreshTimer();
-  },
 };
 
 
@@ -294,8 +276,14 @@ $('body').on('click', '.sec-frame .key:not(.disabled)', function () {
         return;
       }, 3000);
     } else {
+      var seccodehash = $.md5(seccode);
+      var codeok = seccodehash === Domoticz.getAllDevices()['_settings'].SecPassword;
+      if (!codeok) { //check code already before counting down
+        DT_secpanel.wrongCode();
+        return;
+      }
+
       if (status === 0) {
-        DT_secpanel.SetRefreshTimer();
         DT_secpanel.SetSecStatus(status);
         DT_secpanel.beep(tone);
       } else {
@@ -314,6 +302,7 @@ $('body').on('click', '.sec-frame .key:not(.disabled)', function () {
   if (id === "cancel") {
     DT_secpanel.ShowMsg("CANCELLED");
     clearInterval(DT_secpanel.CountdownTimer);
+    DT_secpanel.timer = 0; //otherwise the panel will not show the new status.
     setTimeout(function () {
       DT_secpanel.ShowStatus();
       DT_secpanel.beep(tone);
@@ -326,16 +315,6 @@ $('body').on('click', '.sec-frame .key:not(.disabled)', function () {
     return;
   }
 });
-
-function getDomCred(){
-  var usrEnc = window.btoa(settings['user_name']);
-  var pwdEnc = window.btoa(settings['pass_word']);
-  var usrinfo = "";  
-  if (typeof usrEnc !== "undefined" && usrEnc !== ""){
-    usrinfo =  "username=" + usrEnc + "&password=" + pwdEnc + "&";
-  }
-  return settings["domoticz_ip"] + "/json.htm?" + usrinfo;
-}
 
 $('body').on('click', '.sec-frame .screw.bl', function () {
   var md = new MobileDetect(window.navigator.userAgent);
