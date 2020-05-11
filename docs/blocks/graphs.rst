@@ -78,6 +78,8 @@ The following block parameters can be used to configure the graph:
       | ``true``: enables the feature and display a vertical bar chart, grouped by device
       | ``'vertical'``: is the same as true
       | ``'horizontal'``: enables the feature and display a horizontal bar chart, grouped by device
+      | - Setpoint devices will be displayed as a line infront of the bar graph
+      | - For Evohome devices: The tooltip info will display the status and schedule
   * - stacked
     - ``true``: Show stacked bar charts. See :ref:`stacked`.
   * - beginAtZero
@@ -98,6 +100,8 @@ The following block parameters can be used to configure the graph:
     - specifies how many labels (ticks) to display on the X axis, this does not limit the data in the graph, e.g. 10 (default is all)
   * - cartesian
     - scales the graph with standard 'linear' scale, or 'logarithmic', an algorithm to ensure all data can be seen (default is linear)
+  * - datasetColors
+    - ``datasetColors: ['Blue','#D3D3D3','rgb(44,130,201)','rgba(44,130,201,1)']`` Use custom colors for the graph lines/bars. Must be *html colors*, *hex code*, *rgb* or *rgba string*. See :ref:`datasetColors`.
   * - iconColour
     - colours the graph's title icons (default is grey)
   * - lineFill
@@ -531,7 +535,7 @@ Custom colors can be defined by the parameter ``datasetColors``::
 
     datasetColors: ['red', 'yellow', 'blue', 'orange', 'green', 'purple']
     
-If you want to use custom color names you have to set the variable dataset colors to *html colors*, *hex code*, *rgb* or *rgba string*::
+**Optional**: If you want to use *custom color names* you have to set the variable dataset colors to *html colors*, *hex code*, *rgb* or *rgba string*::
 
     datasetColors: [colourBlueLight, colourLightGrey, colourBlue]
 
@@ -791,11 +795,15 @@ With temperature sensors that have setpoints, it calculates whether the device i
 * At setpoint - orange
 * Hot - red
 
-The office and penthouse rooms are showing red, as the temperature is above the setpoint ...
+- It will show a line displaying the SetPoint values in front of the bar graph for thermostat devices that have SetPoint data.
+- The tooltip will show the status and schedule with EvoHome devices.
+- The block datasetColors parameter can now be used to set the colors for 'below temp', 'at temp', 'above temp' and 'setpoint' (in that order).
 
-.. image :: img/group_by_device_2.png
+The office and kitchen rooms are showing red, as the temperature is above the setpoint ...
 
-Same as above, but setting *groupByDevice* to *'horizontal'* shows this ...
+.. image :: img/graph_groupByDevice_tooltip1.png
+
+Setting *groupByDevice* to *'horizontal'* shows like this ...
 ::
 
 	blocks['all_zones'] = {	
